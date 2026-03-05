@@ -207,9 +207,10 @@ def rss(podcast_id: str, request: Request) -> FileResponse:
 
         # Create new feed with feedgen
         fg: FeedGenerator = FeedGenerator()
-        fg.title(parsed_feed.feed.get("title", "Podcast"))
+        fg.title(parsed_feed.feed.get("title", "Podcast") + " (With Chapters)")
         fg.link(href=parsed_feed.feed.get("link", ""), rel="alternate")
         fg.description(parsed_feed.feed.get("description", ""))
+        fg.generator("ChapteRSS - https://github.com/shish/chapterss")
 
         # Copy over other feed-level attributes if they exist
         if "language" in parsed_feed.feed:
