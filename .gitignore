@@ -1,0 +1,8 @@
+__pycache__
+*.egg-info
+.venv
+config
+data
+*.mp3
+*.wav
+*.srt

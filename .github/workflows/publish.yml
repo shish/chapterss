@@ -1,0 +1,16 @@
+name: Docker Push
+
+on: [push]
+
+jobs:
+  build:
+    name: Docker Push
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish to Registry
+        uses: elgohr/Publish-Docker-Github-Action@main
+        with:
+          name: shish2k/chapterss
+          username: ${{ vars.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}

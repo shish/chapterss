@@ -1,0 +1,47 @@
+[project]
+name = "chapterss"
+version = "0.2.0"
+requires-python = ">=3.14"
+dependencies = [
+  "fastapi",
+  "uvicorn",
+  "feedparser",
+  "feedgen",
+  "requests",
+  "librosa",
+  "numpy",
+  "scipy",
+  "pyyaml",
+  "pydub",
+]
+
+[project.scripts]
+extract-clips = "chapterss.extract_clips:main"
+detect-dividers = "chapterss.detect_dividers:main"
+insert-chapters = "chapterss.insert_chapters:main"
+server = "chapterss.server:main"
+
+[dependency-groups]
+dev = [
+    "mypy",
+    "ruff",
+    "scipy-stubs>=1.17.1.0",
+    "types-PyYAML",
+    "types-requests",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.uv]
+package = true
+
+[tool.mypy]
+disable_error_code = ["import-untyped"]
+
+[tool.ruff]
+line-length = 120
+
+[tool.setuptools]
+packages = ["chapterss"]
