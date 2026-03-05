@@ -1,13 +1,13 @@
 # ChapteRSS
 
-Automatically add chapter markers to podcast episodes by detecting audio dividers.
+Automatically add chapter markers to podcast episodes by detecting audio markers.
 
 ## Overview
 
 ChapteRSS provides tools to:
 1. **Extract clips** from audio files using SRT annotations
-2. **Detect dividers** in podcast episodes using audio fingerprinting
-3. **Insert chapters** into MP3 files based on detected dividers
+2. **Detect markers** in podcast episodes using audio fingerprinting
+3. **Insert chapters** into MP3 files based on detected markers
 4. **Serve an RSS feed** that automatically adds chapters to episodes
 
 ## Installation
@@ -18,11 +18,11 @@ uv sync
 
 ## Quick Start: Manual Workflow
 
-### Step 1: Extract Divider Clips
+### Step 1: Extract Marker Clips
 
-First, you need sample audio clips of the dividers (jingles, music, sound effects) that separate sections in your podcast.
+First, you need sample audio clips of the markers (jingles, music, sound effects) that separate sections in your podcast.
 
-Create an SRT file marking where dividers appear in a sample episode:
+Create an SRT file marking where markers appear in a sample episode:
 
 ```srt
 1
@@ -41,25 +41,25 @@ outro
 Extract the clips:
 
 ```bash
-uv run extract-clips episode.mp3 markers.srt -o dividers/
+uv run extract-clips episode.mp3 markers.srt -o markers/
 ```
 
 This creates:
-- `dividers/intro.wav`
-- `dividers/sponsor_break.wav`
-- `dividers/outro.wav`
+- `markers/intro.wav`
+- `markers/sponsor_break.wav`
+- `markers/outro.wav`
 
-### Step 2: Detect Dividers
+### Step 2: Detect Markers
 
-Test that the dividers are being detected correctly in your episodes:
+Test that the markers are being detected correctly in your episodes:
 
 ```bash
-uv run detect-dividers episode.mp3 dividers/
+uv run detect-markers episode.mp3 markers/
 ```
 
 Output example:
 ```
-Found 3 dividers:
+Found 3 markers:
   00:05 (5.23s) - intro - 89%
   15:30 (930.45s) - sponsor_break - 86%
   30:45 (1845.12s) - outro - 90%
@@ -71,13 +71,13 @@ If detection isn't working well, adjust these parameters:
 
 ```bash
 # Lower threshold for more sensitive detection (more false positives)
-uv run detect-dividers episode.mp3 dividers/ --threshold 0.75
+uv run detect-markers episode.mp3 markers/ --threshold 0.75
 
-# Higher threshold for stricter detection (may miss some dividers)
-uv run detect-dividers episode.mp3 dividers/ --threshold 0.90
+# Higher threshold for stricter detection (may miss some markers)
+uv run detect-markers episode.mp3 markers/ --threshold 0.90
 
 # Adjust minimum gap between detections (default 8 seconds)
-uv run detect-dividers episode.mp3 dividers/ --min-gap 10.0
+uv run detect-markers episode.mp3 markers/ --min-gap 10.0
 ```
 
 ### Step 3: Insert Chapters
@@ -85,7 +85,7 @@ uv run detect-dividers episode.mp3 dividers/ --min-gap 10.0
 Once detection looks good, insert chapter markers into your MP3:
 
 ```bash
-uv run insert-chapters episode.mp3 dividers/ episode_with_chapters.mp3
+uv run insert-chapters episode.mp3 markers/ episode_with_chapters.mp3
 ```
 
 This creates a new MP3 file with embedded chapter markers. You can verify the chapters in most podcast players or with:
@@ -154,7 +154,7 @@ The server will:
 - Generate a new RSS feed with modified enclosure URLs
 - When an episode is requested:
   - Download the original audio (if not cached)
-  - Detect dividers and add chapters
+  - Detect markers and add chapters
   - Cache the result
   - Serve the chaptered version
 

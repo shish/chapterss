@@ -1,7 +1,8 @@
 import argparse
 import logging
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 import librosa
 import numpy as np
@@ -11,9 +12,16 @@ from scipy.signal import correlate
 log: logging.Logger = logging.getLogger(__name__)
 
 
+@dataclass
+class Chapter:
+    time: float
+    name: str
+    confidence: float
+
+
 def load_audio_features(
     path: Path, sr: int = 22050, hop_length: int = 512
-) -> Tuple[NDArray[np.floating], NDArray[np.floating], int]:
+) -> tuple[NDArray[np.floating], NDArray[np.floating], int]:
     """Load audio and extract MFCC features for better matching."""
 
     # Limit audio file size to prevent memory issues (max 2GB)
@@ -35,49 +43,49 @@ def load_audio_features(
     return features, audio, sr
 
 
-def detect_dividers(
+def detect_markers(
     audio_path: Path,
-    divider_paths: Dict[str, Path],
+    marker_paths: Dict[str, Path],
     threshold: float = 0.75,
     min_gap: float = 8.0,
-) -> List[Tuple[float, str, float]]:
+) -> List[Chapter]:
     """
-    Detect multiple types of dividers in an audio file using MFCC features.
+    Detect multiple types of markers in an audio file using MFCC features.
 
     Args:
         audio_path: Path to the audio file to analyze
-        divider_paths: Dict mapping divider names to their audio file paths
+        marker_paths: Dict mapping marker names to their audio file paths
         threshold: Correlation threshold for detection (0.0-1.0)
         min_gap: Minimum gap between detections in seconds
 
     Returns:
-        List of tuples (time, divider_name, confidence) sorted by time
+        List of Chapter objects sorted by time
     """
     # Validate parameters
     if not 0.0 <= threshold <= 1.0:
         raise ValueError(f"Threshold must be between 0.0 and 1.0, got {threshold}")
     if min_gap < 0:
         raise ValueError(f"min_gap must be non-negative, got {min_gap}")
-    if not divider_paths:
-        raise ValueError("No divider paths provided")
-    if len(divider_paths) > 100:
-        raise ValueError(f"Too many dividers (max 100), got {len(divider_paths)}")
+    if not marker_paths:
+        raise ValueError("No marker paths provided")
+    if len(marker_paths) > 100:
+        raise ValueError(f"Too many markers (max 100), got {len(marker_paths)}")
 
     hop: int = 512
     sr: int = 22050
 
     audio_features, audio, audio_sr = load_audio_features(audio_path, sr=sr, hop_length=hop)
 
-    all_detections: List[Tuple[float, str, float]] = []
+    all_detections: List[Chapter] = []
 
-    # Process each divider type
-    for divider_name, divider_path in divider_paths.items():
-        divider_features, divider_audio, divider_sr = load_audio_features(divider_path, sr=sr, hop_length=hop)
+    # Process each marker type
+    for marker_name, marker_path in marker_paths.items():
+        marker_features, marker_audio, marker_sr = load_audio_features(marker_path, sr=sr, hop_length=hop)
 
         # Compute correlation for each feature dimension and average
         correlations: List[NDArray[np.floating]] = []
         for i in range(audio_features.shape[0]):
-            corr = correlate(audio_features[i], divider_features[i], mode="valid")
+            corr = correlate(audio_features[i], marker_features[i], mode="valid")
             # Normalize each dimension
             if np.max(np.abs(corr)) > 0:
                 corr = corr / np.max(np.abs(corr))
@@ -95,31 +103,31 @@ def detect_dividers(
         times = peaks * hop / sr
         confidences = avg_corr[peaks]
 
-        # Add all detections for this divider
+        # Add all detections for this marker
         for t, conf in zip(times, confidences):
-            all_detections.append((t, divider_name, conf))
+            all_detections.append(Chapter(time=t, name=marker_name, confidence=conf))
 
     # Sort by time
-    all_detections.sort(key=lambda x: x[0])
+    all_detections.sort(key=lambda x: x.time)
 
     # Remove nearby duplicates, keeping the one with highest confidence
-    cleaned: List[Tuple[float, str, float]] = []
-    for time, name, conf in all_detections:
-        if not cleaned or abs(time - cleaned[-1][0]) > min_gap:
-            cleaned.append((time, name, conf))
-        elif conf > cleaned[-1][2]:
+    cleaned: List[Chapter] = []
+    for chapter in all_detections:
+        if not cleaned or abs(chapter.time - cleaned[-1].time) > min_gap:
+            cleaned.append(chapter)
+        elif chapter.confidence > cleaned[-1].confidence:
             # Replace with higher confidence detection
-            cleaned[-1] = (time, name, conf)
+            cleaned[-1] = chapter
 
     return cleaned
 
 
 def main() -> None:
-    parser: argparse.ArgumentParser = argparse.ArgumentParser(description="Detect dividers in audio files")
+    parser: argparse.ArgumentParser = argparse.ArgumentParser(description="Detect markers in audio files")
     parser.add_argument("audio", type=Path, help="Path to the audio file")
     parser.add_argument("markers", type=Path, help="Folder containing marker audio files")
     parser.add_argument("--threshold", type=float, default=0.85, help="Correlation threshold")
-    parser.add_argument("--min-gap", type=float, default=8.0, help="Minimum gap between dividers in seconds")
+    parser.add_argument("--min-gap", type=float, default=8.0, help="Minimum gap between markers in seconds")
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose output")
     args: argparse.Namespace = parser.parse_args()
 
@@ -127,29 +135,27 @@ def main() -> None:
     logging.basicConfig(level=log_level, format="%(asctime)s %(name)s %(message)s")
 
     try:
-        divider_paths: Dict[str, Path] = {}
+        marker_paths: Dict[str, Path] = {}
 
         for marker in sorted(args.markers.glob("*")):
             name: str = marker.stem
             safe_name: str = "".join(c for c in name if c.isalnum() or c in "_ -")
             if safe_name:
-                divider_paths[safe_name] = marker
+                marker_paths[safe_name] = marker
 
-        if not divider_paths:
+        if not marker_paths:
             parser.error(f"No audio files found in {args.markers}")
 
         log.debug(f"Loading audio: {args.audio}")
-        log.debug(f"Dividers to detect: {', '.join(divider_paths.keys())}")
+        log.debug(f"Markers to detect: {', '.join(marker_paths.keys())}")
 
-        dividers: List[Tuple[float, str, float]] = detect_dividers(
-            args.audio, divider_paths, args.threshold, args.min_gap
-        )
+        markers: List[Chapter] = detect_markers(args.audio, marker_paths, args.threshold, args.min_gap)
 
-        print(f"Found {len(dividers)} dividers:")
-        for time, name, conf in dividers:
-            mins: int = int(time // 60)
-            secs: int = int(time % 60)
-            print(f"  {mins:02d}:{secs:02d} ({time:.2f}s) - {name} - {conf * 100:.0f}%")
+        print(f"Found {len(markers)} markers:")
+        for chapter in markers:
+            mins: int = int(chapter.time // 60)
+            secs: int = int(chapter.time % 60)
+            print(f"  {mins:02d}:{secs:02d} ({chapter.time:.2f}s) - {chapter.name} - {chapter.confidence * 100:.0f}%")
     except ValueError as e:
         log.error(f"Validation error: {e}")
         exit(1)

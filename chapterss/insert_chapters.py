@@ -2,25 +2,25 @@ import argparse
 import logging
 import subprocess
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
-from .detect_dividers import detect_dividers
+from .detect_markers import Chapter, detect_markers
 
 log: logging.Logger = logging.getLogger(__name__)
 
 
-def write_ffmpeg_metadata(chapters: List[Tuple[float, str, float]], output_path: Path) -> None:
+def write_ffmpeg_metadata(chapters: List[Chapter], output_path: Path) -> None:
     """Write chapter metadata in FFmpeg format."""
     with open(output_path, "w") as f:
         f.write(";FFMETADATA1\n")
-        for i, (time, name, confidence) in enumerate(chapters):
+        for i, chapter in enumerate(chapters):
             # Convert time to milliseconds for FFmpeg
-            start_ms: int = int(time * 1000)
+            start_ms: int = int(chapter.time * 1000)
             end_ms: int
 
             # Use next chapter start or add 1 second as end time
             if i + 1 < len(chapters):
-                end_ms = int(chapters[i + 1][0] * 1000)
+                end_ms = int(chapters[i + 1].time * 1000)
             else:
                 end_ms = start_ms + 1000
 
@@ -28,7 +28,7 @@ def write_ffmpeg_metadata(chapters: List[Tuple[float, str, float]], output_path:
             f.write("TIMEBASE=1/1000\n")
             f.write(f"START={start_ms}\n")
             f.write(f"END={end_ms}\n")
-            f.write(f"title={name}\n")
+            f.write(f"title={chapter.name}\n")
 
 
 def embed_chapters(audio_path: Path, chapters_file: Path, output_path: Path) -> None:
@@ -61,17 +61,17 @@ def embed_chapters(audio_path: Path, chapters_file: Path, output_path: Path) -> 
 
 def process_episode(
     audio_path: Path,
-    dividers_folder: Path,
+    markers_folder: Path,
     output_path: Path,
     threshold: float = 0.85,
     min_gap: float = 8.0,
 ) -> Optional[Path]:
     """
-    Process a podcast episode: detect dividers and embed chapters.
+    Process a podcast episode: detect markers and embed chapters.
 
     Args:
         audio_path: Path to the audio file
-        dividers_folder: Path to folder containing divider audio files
+        markers_folder: Path to folder containing marker audio files
         output_path: Path for the output audio file with chapters
         threshold: Detection threshold (0.0-1.0)
         min_gap: Minimum gap between detections in seconds
@@ -83,49 +83,47 @@ def process_episode(
         raise ValueError(f"min_gap must be non-negative, got {min_gap}")
 
     log.debug(f"Processing: {audio_path}")
-    log.debug(f"Dividers folder: {dividers_folder}")
+    log.debug(f"Markers folder: {markers_folder}")
     log.debug(f"Output: {output_path}")
 
-    # Load divider files
-    if not dividers_folder.is_dir():
-        raise ValueError(f"Dividers path must be a directory: {dividers_folder}")
+    # Load marker files
+    if not markers_folder.is_dir():
+        raise ValueError(f"Markers path must be a directory: {markers_folder}")
 
-    divider_paths: Dict[str, Path] = {}
+    marker_paths: Dict[str, Path] = {}
     allowed_extensions: set[str] = {".wav", ".mp3", ".flac", ".ogg", ".m4a"}
 
-    for audio_file in sorted(dividers_folder.glob("*")):
-        # Ensure we only process files within the dividers folder (no symlinks to outside)
+    for audio_file in sorted(markers_folder.glob("*")):
+        # Ensure we only process files within the markers folder (no symlinks to outside)
         try:
             audio_file_resolved: Path = audio_file.resolve()
-            audio_file_resolved.relative_to(dividers_folder.resolve())
+            audio_file_resolved.relative_to(markers_folder.resolve())
         except ValueError, RuntimeError:
-            log.warning(f"Skipping file outside dividers folder: {audio_file}")
+            log.warning(f"Skipping file outside markers folder: {audio_file}")
             continue
 
         if audio_file.suffix.lower() in allowed_extensions:
             name: str = audio_file.stem
-            # Sanitize divider name to prevent injection in chapter titles
+            # Sanitize marker name to prevent injection in chapter titles
             safe_name: str = "".join(c for c in name if c.isalnum() or c in "_ -")
             if safe_name:
-                divider_paths[safe_name] = audio_file
+                marker_paths[safe_name] = audio_file
 
-    if not divider_paths:
-        raise ValueError(f"No audio files found in {dividers_folder}")
+    if not marker_paths:
+        raise ValueError(f"No audio files found in {markers_folder}")
 
-    log.debug(f"Loaded {len(divider_paths)} dividers: {', '.join(divider_paths.keys())}")
+    log.debug(f"Loaded {len(marker_paths)} markers: {', '.join(marker_paths.keys())}")
 
-    # Detect dividers
-    log.debug("Detecting dividers...")
+    # Detect markers
+    log.debug("Detecting markers...")
 
-    chapters: List[Tuple[float, str, float]] = detect_dividers(
-        audio_path, divider_paths, threshold=threshold, min_gap=min_gap
-    )
+    chapters: List[Chapter] = detect_markers(audio_path, marker_paths, threshold=threshold, min_gap=min_gap)
 
     log.info(f"Found {len(chapters)} chapters:")
-    for time, name, conf in chapters:
-        mins: int = int(time // 60)
-        secs: int = int(time % 60)
-        log.info(f"  {mins:02d}:{secs:02d} - {name} (confidence: {conf:.3f})")
+    for chapter in chapters:
+        mins: int = int(chapter.time // 60)
+        secs: int = int(chapter.time % 60)
+        log.info(f"  {mins:02d}:{secs:02d} - {chapter.name} ({chapter.confidence * 100:.0f}%)")
 
     if not chapters:
         log.info("Warning: No chapters detected!")
@@ -151,7 +149,7 @@ def main() -> None:
         description="Process a podcast episode and embed chapter markers"
     )
     parser.add_argument("audio", type=Path, help="Path to the audio file")
-    parser.add_argument("dividers", type=Path, help="Folder containing divider audio files")
+    parser.add_argument("markers", type=Path, help="Folder containing marker audio files")
     parser.add_argument("output", type=Path, help="Path for the output audio file with chapters")
     parser.add_argument("--threshold", type=float, default=0.85, help="Detection threshold")
     parser.add_argument("--min-gap", type=float, default=8.0, help="Minimum gap between chapters in seconds")
@@ -165,7 +163,7 @@ def main() -> None:
     try:
         process_episode(
             args.audio,
-            args.dividers,
+            args.markers,
             args.output,
             threshold=args.threshold,
             min_gap=args.min_gap,

@@ -17,7 +17,7 @@ dependencies = [
 
 [project.scripts]
 extract-clips = "chapterss.extract_clips:main"
-detect-dividers = "chapterss.detect_dividers:main"
+detect-markers = "chapterss.detect_markers:main"
 insert-chapters = "chapterss.insert_chapters:main"
 server = "chapterss.server:main"
 
