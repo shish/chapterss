@@ -13,10 +13,18 @@ log: logging.Logger = logging.getLogger(__name__)
 
 
 @dataclass
-class Chapter:
+class Marker:
     time: float
     name: str
     confidence: float
+    offset: float = 0.0  # Length of the marker in seconds
+
+
+@dataclass
+class Chapter:
+    start: float
+    end: float
+    title: str
 
 
 def load_audio_features(
@@ -48,7 +56,7 @@ def detect_markers(
     marker_paths: Dict[str, Path],
     threshold: float = 0.75,
     min_gap: float = 8.0,
-) -> List[Chapter]:
+) -> List[Marker]:
     """
     Detect multiple types of markers in an audio file using MFCC features.
 
@@ -59,7 +67,7 @@ def detect_markers(
         min_gap: Minimum gap between detections in seconds
 
     Returns:
-        List of Chapter objects sorted by time
+        List of Marker objects sorted by time
     """
     # Validate parameters
     if not 0.0 <= threshold <= 1.0:
@@ -76,7 +84,7 @@ def detect_markers(
 
     audio_features, audio, audio_sr = load_audio_features(audio_path, sr=sr, hop_length=hop)
 
-    all_detections: List[Chapter] = []
+    all_detections: List[Marker] = []
 
     # Process each marker type
     for marker_name, marker_path in marker_paths.items():
@@ -103,23 +111,82 @@ def detect_markers(
         times = peaks * hop / sr
         confidences = avg_corr[peaks]
 
+        # Calculate marker length in seconds
+        marker_length = len(marker_audio) / marker_sr
+
         # Add all detections for this marker
         for t, conf in zip(times, confidences):
-            all_detections.append(Chapter(time=t, name=marker_name, confidence=conf))
+            all_detections.append(Marker(time=t, name=marker_name, confidence=conf, offset=marker_length))
 
     # Sort by time
     all_detections.sort(key=lambda x: x.time)
 
     # Remove nearby duplicates, keeping the one with highest confidence
-    cleaned: List[Chapter] = []
-    for chapter in all_detections:
-        if not cleaned or abs(chapter.time - cleaned[-1].time) > min_gap:
-            cleaned.append(chapter)
-        elif chapter.confidence > cleaned[-1].confidence:
+    cleaned: List[Marker] = []
+    for marker in all_detections:
+        if not cleaned or abs(marker.time - cleaned[-1].time) > min_gap:
+            cleaned.append(marker)
+        elif marker.confidence > cleaned[-1].confidence:
             # Replace with higher confidence detection
-            cleaned[-1] = chapter
+            cleaned[-1] = marker
 
     return cleaned
+
+
+def detect_marked_chapters(
+    audio_path: Path,
+    marker_paths: Dict[str, Path],
+    threshold: float = 0.75,
+    min_gap: float = 8.0,
+    intro_threshold: float = 2.0,
+) -> List[Chapter]:
+    """
+    Detect markers and convert them to chapters.
+
+    Each chapter starts at the end of a marker and continues until the next marker.
+    If there's more than intro_threshold seconds before the first marker, an "Intro"
+    chapter is added.
+
+    Args:
+        audio_path: Path to the audio file to analyze
+        marker_paths: Dict mapping marker names to their audio file paths
+        threshold: Correlation threshold for detection (0.0-1.0)
+        min_gap: Minimum gap between detections in seconds
+        intro_threshold: Minimum time before first marker to create an "Intro" chapter
+
+    Returns:
+        List of Chapter objects sorted by start time
+    """
+    # Get audio duration
+    audio_duration = librosa.get_duration(path=str(audio_path))
+
+    # Detect markers
+    markers = detect_markers(audio_path, marker_paths, threshold, min_gap)
+
+    if not markers:
+        return []
+
+    chapters: List[Chapter] = []
+
+    # Add intro chapter if there's significant time before the first marker
+    if markers[0].time > intro_threshold:
+        chapters.append(Chapter(start=0.0, end=markers[0].time, title="Intro"))
+
+    # Create chapters between markers
+    for i, marker in enumerate(markers):
+        # Chapter starts at the end of this marker
+        chapter_start = marker.time + marker.offset
+
+        # Chapter ends at the start of the next marker, or at the end of the audio file
+        if i + 1 < len(markers):
+            chapter_end = markers[i + 1].time
+        else:
+            # For the last chapter, use the actual audio duration
+            chapter_end = audio_duration
+
+        chapters.append(Chapter(start=chapter_start, end=chapter_end, title=marker.name))
+
+    return chapters
 
 
 def main() -> None:
@@ -149,13 +216,13 @@ def main() -> None:
         log.debug(f"Loading audio: {args.audio}")
         log.debug(f"Markers to detect: {', '.join(marker_paths.keys())}")
 
-        markers: List[Chapter] = detect_markers(args.audio, marker_paths, args.threshold, args.min_gap)
+        markers: List[Marker] = detect_markers(args.audio, marker_paths, args.threshold, args.min_gap)
 
         print(f"Found {len(markers)} markers:")
-        for chapter in markers:
-            mins: int = int(chapter.time // 60)
-            secs: int = int(chapter.time % 60)
-            print(f"  {mins:02d}:{secs:02d} ({chapter.time:.2f}s) - {chapter.name} - {chapter.confidence * 100:.0f}%")
+        for marker in markers:
+            mins: int = int(marker.time // 60)
+            secs: int = int(marker.time % 60)
+            print(f"  {mins:02d}:{secs:02d} ({marker.time:.2f}s) - {marker.name} - {marker.confidence * 100:.0f}%")
     except ValueError as e:
         log.error(f"Validation error: {e}")
         exit(1)

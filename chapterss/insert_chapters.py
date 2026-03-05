@@ -4,7 +4,7 @@ import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from .detect_markers import Chapter, detect_markers
+from .detect_markers import Chapter, detect_marked_chapters
 
 log: logging.Logger = logging.getLogger(__name__)
 
@@ -13,22 +13,16 @@ def write_ffmpeg_metadata(chapters: List[Chapter], output_path: Path) -> None:
     """Write chapter metadata in FFmpeg format."""
     with open(output_path, "w") as f:
         f.write(";FFMETADATA1\n")
-        for i, chapter in enumerate(chapters):
-            # Convert time to milliseconds for FFmpeg
-            start_ms: int = int(chapter.time * 1000)
-            end_ms: int
-
-            # Use next chapter start or add 1 second as end time
-            if i + 1 < len(chapters):
-                end_ms = int(chapters[i + 1].time * 1000)
-            else:
-                end_ms = start_ms + 1000
+        for chapter in chapters:
+            # Convert times to milliseconds for FFmpeg
+            start_ms: int = int(chapter.start * 1000)
+            end_ms: int = int(chapter.end * 1000)
 
             f.write("\n[CHAPTER]\n")
             f.write("TIMEBASE=1/1000\n")
             f.write(f"START={start_ms}\n")
             f.write(f"END={end_ms}\n")
-            f.write(f"title={chapter.name}\n")
+            f.write(f"title={chapter.title}\n")
 
 
 def embed_chapters(audio_path: Path, chapters_file: Path, output_path: Path) -> None:
@@ -114,16 +108,18 @@ def process_episode(
 
     log.debug(f"Loaded {len(marker_paths)} markers: {', '.join(marker_paths.keys())}")
 
-    # Detect markers
+    # Detect markers and convert to chapters
     log.debug("Detecting markers...")
 
-    chapters: List[Chapter] = detect_markers(audio_path, marker_paths, threshold=threshold, min_gap=min_gap)
+    chapters: List[Chapter] = detect_marked_chapters(audio_path, marker_paths, threshold=threshold, min_gap=min_gap)
 
     log.info(f"Found {len(chapters)} chapters:")
     for chapter in chapters:
-        mins: int = int(chapter.time // 60)
-        secs: int = int(chapter.time % 60)
-        log.info(f"  {mins:02d}:{secs:02d} - {chapter.name} ({chapter.confidence * 100:.0f}%)")
+        start_mins: int = int(chapter.start // 60)
+        start_secs: int = int(chapter.start % 60)
+        end_mins: int = int(chapter.end // 60)
+        end_secs: int = int(chapter.end % 60)
+        log.info(f"  {start_mins:02d}:{start_secs:02d} - {end_mins:02d}:{end_secs:02d} - {chapter.title}")
 
     if not chapters:
         log.info("Warning: No chapters detected!")
