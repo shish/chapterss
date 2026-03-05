@@ -1,6 +1,7 @@
 import argparse
 import logging
 import re
+import time
 from pathlib import Path
 from typing import Any, Dict, List
 from urllib.parse import urlparse
@@ -174,18 +175,33 @@ def rss(podcast_id: str, request: Request) -> FileResponse:
     original: Path = data_dir / podcast_id / "original" / "feed.xml"
     original.parent.mkdir(parents=True, exist_ok=True)
 
+    # Refresh original feed if it doesn't exist or is older than 1 hour
+    should_refresh_original = False
     if not original.exists():
+        should_refresh_original = True
+    else:
+        age_seconds = time.time() - original.stat().st_mtime
+        if age_seconds > 3600:  # 1 hour
+            should_refresh_original = True
+
+    if should_refresh_original:
         content: bytes = safe_http_get(config["source_rss"], MAX_FEED_SIZE)
         original.write_bytes(content)
 
     chapped: Path = data_dir / podcast_id / "chapped" / "feed.xml"
     chapped.parent.mkdir(parents=True, exist_ok=True)
 
+    # Refresh chapped feed if it doesn't exist or is older than original
+    should_refresh_chapped = False
     if not chapped.exists():
+        should_refresh_chapped = True
+    elif original.exists() and chapped.stat().st_mtime < original.stat().st_mtime:
+        should_refresh_chapped = True
+
+    if should_refresh_chapped:
         parsed_feed: feedparser.FeedParserDict = feedparser.parse(str(original))
 
-        # Determine protocol and host from request headers
-        scheme: str = request.url.scheme
+        scheme: str = request.headers.get("x-forwarded-proto", request.url.scheme)
         host: str = request.headers.get("host", request.url.netloc)
         base_url: str = f"{scheme}://{host}"
 
