@@ -13,11 +13,13 @@ dependencies = [
   "scipy",
   "pyyaml",
   "pydub",
+  "openai-whisper",
 ]
 
 [project.scripts]
 extract-clips = "chapterss.extract_clips:main"
 detect-markers = "chapterss.detect_markers:main"
+transcribe = "chapterss.transcribe:main"
 insert-chapters = "chapterss.insert_chapters:main"
 server = "chapterss.server:main"
 
