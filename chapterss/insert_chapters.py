@@ -109,8 +109,6 @@ def process_episode(
     log.debug(f"Loaded {len(marker_paths)} markers: {', '.join(marker_paths.keys())}")
 
     # Detect markers and convert to chapters
-    log.debug("Detecting markers...")
-
     chapters: List[Chapter] = detect_marked_chapters(audio_path, marker_paths, threshold=threshold, min_gap=min_gap)
 
     log.info(f"Found {len(chapters)} chapters:")
@@ -147,14 +145,15 @@ def main() -> None:
     parser.add_argument("audio", type=Path, help="Path to the audio file")
     parser.add_argument("markers", type=Path, help="Folder containing marker audio files")
     parser.add_argument("output", type=Path, help="Path for the output audio file with chapters")
-    parser.add_argument("--threshold", type=float, default=0.85, help="Detection threshold")
+    parser.add_argument("--threshold", type=float, default=0.95, help="Detection threshold")
     parser.add_argument("--min-gap", type=float, default=8.0, help="Minimum gap between chapters in seconds")
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose output")
 
     args: argparse.Namespace = parser.parse_args()
 
     log_level = logging.DEBUG if args.verbose else logging.INFO
-    logging.basicConfig(level=log_level, format="%(asctime)s %(name)s %(message)s")
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
+    logging.getLogger("chapterss").setLevel(log_level)
 
     try:
         process_episode(

@@ -27,28 +27,20 @@ class Chapter:
     title: str
 
 
-def load_audio_features(
-    path: Path, sr: int = 22050, hop_length: int = 512
-) -> tuple[NDArray[np.floating], NDArray[np.floating], int]:
+def load_audio_features(path: Path, sr: int = 22050, hop_length: int = 512) -> tuple[NDArray[np.floating], float]:
     """Load audio and extract MFCC features for better matching."""
 
-    # Limit audio file size to prevent memory issues (max 2GB)
-    max_size: int = 2 * 1024 * 1024 * 1024
-    if path.stat().st_size > max_size:
-        raise ValueError(f"Audio file too large (max {max_size} bytes)")
-    audio, _ = librosa.load(str(path), sr=sr)
+    duration = librosa.get_duration(path=path)
+    if duration > 2 * 60 * 60:
+        raise ValueError("Audio too long")
 
-    # Validate audio length (max 24 hours at 22050 Hz)
-    max_samples: int = 24 * 3600 * sr
-    if len(audio) > max_samples:
-        raise ValueError("Audio too long (max 24 hours)")
-
+    audio, _ = librosa.load(path, sr=sr)
     mfcc = librosa.feature.mfcc(y=audio, sr=sr, n_mfcc=20, hop_length=hop_length)
     mfcc_delta = librosa.feature.delta(mfcc)
     features = np.vstack([mfcc, mfcc_delta])
     features -= np.mean(features, axis=1, keepdims=True)
     features /= np.std(features, axis=1, keepdims=True) + 1e-6
-    return features, audio, sr
+    return features, duration
 
 
 def detect_markers(
@@ -79,16 +71,20 @@ def detect_markers(
     if len(marker_paths) > 100:
         raise ValueError(f"Too many markers (max 100), got {len(marker_paths)}")
 
+    log.debug(f"Detecting {len(marker_paths)} markers in {audio_path}...")
+
     hop: int = 512
     sr: int = 22050
 
-    audio_features, audio, audio_sr = load_audio_features(audio_path, sr=sr, hop_length=hop)
+    log.debug("Loading audio features for main audio...")
+    audio_features, audio_dur = load_audio_features(audio_path, sr=sr, hop_length=hop)
 
     all_detections: List[Marker] = []
 
     # Process each marker type
     for marker_name, marker_path in marker_paths.items():
-        marker_features, marker_audio, marker_sr = load_audio_features(marker_path, sr=sr, hop_length=hop)
+        log.debug(f"Processing marker '{marker_name}' from {marker_path}...")
+        marker_features, marker_dur = load_audio_features(marker_path, sr=sr, hop_length=hop)
 
         # Compute correlation for each feature dimension and average
         correlations: List[NDArray[np.floating]] = []
@@ -111,17 +107,13 @@ def detect_markers(
         times = peaks * hop / sr
         confidences = avg_corr[peaks]
 
-        # Calculate marker length in seconds
-        marker_length = len(marker_audio) / marker_sr
-
         # Add all detections for this marker
         for t, conf in zip(times, confidences):
-            all_detections.append(Marker(time=t, name=marker_name, confidence=conf, offset=marker_length))
+            all_detections.append(Marker(time=t, name=marker_name, confidence=conf, offset=marker_dur))
 
     # Sort by time
+    log.debug(f"Deduplicating {len(all_detections)} markers...")
     all_detections.sort(key=lambda x: x.time)
-
-    # Remove nearby duplicates, keeping the one with highest confidence
     cleaned: List[Marker] = []
     for marker in all_detections:
         if not cleaned or abs(marker.time - cleaned[-1].time) > min_gap:
@@ -130,6 +122,7 @@ def detect_markers(
             # Replace with higher confidence detection
             cleaned[-1] = marker
 
+    log.debug(f"Detected {len(cleaned)} markers")
     return cleaned
 
 
@@ -158,7 +151,7 @@ def detect_marked_chapters(
         List of Chapter objects sorted by start time
     """
     # Get audio duration
-    audio_duration = librosa.get_duration(path=str(audio_path))
+    audio_duration = librosa.get_duration(path=audio_path)
 
     # Detect markers
     markers = detect_markers(audio_path, marker_paths, threshold, min_gap)
@@ -193,13 +186,14 @@ def main() -> None:
     parser: argparse.ArgumentParser = argparse.ArgumentParser(description="Detect markers in audio files")
     parser.add_argument("audio", type=Path, help="Path to the audio file")
     parser.add_argument("markers", type=Path, help="Folder containing marker audio files")
-    parser.add_argument("--threshold", type=float, default=0.85, help="Correlation threshold")
+    parser.add_argument("--threshold", type=float, default=0.95, help="Correlation threshold")
     parser.add_argument("--min-gap", type=float, default=8.0, help="Minimum gap between markers in seconds")
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose output")
     args: argparse.Namespace = parser.parse_args()
 
     log_level = logging.DEBUG if args.verbose else logging.INFO
-    logging.basicConfig(level=log_level, format="%(asctime)s %(name)s %(message)s")
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
+    logging.getLogger("chapterss").setLevel(log_level)
 
     try:
         marker_paths: Dict[str, Path] = {}

@@ -310,7 +310,8 @@ def main() -> None:
     args: argparse.Namespace = parser.parse_args()
 
     log_level = logging.DEBUG if args.verbose else logging.INFO
-    logging.basicConfig(level=log_level, format="%(asctime)s %(name)s %(message)s")
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
+    logging.getLogger("chapterss").setLevel(log_level)
 
     uvicorn.run(
         "chapterss.server:app",
