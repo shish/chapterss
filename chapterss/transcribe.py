@@ -1,10 +1,8 @@
 import argparse
 import logging
-import tempfile
 from pathlib import Path
 
-import whisper
-from pydub import AudioSegment
+from pywhispercpp.model import Model
 
 log: logging.Logger = logging.getLogger(__name__)
 
@@ -12,26 +10,18 @@ log: logging.Logger = logging.getLogger(__name__)
 def transcribe(audio_path: Path, start: float, duration: float) -> str:
     log.info(f"Transcribing {audio_path} from {start:.2f}s to {start + duration:.2f}s")
 
-    log.debug(f"Loading audio file: {audio_path}")
-    audio = AudioSegment.from_file(audio_path)
-    start_ms = int(start * 1000)
-    end_ms = int((start + duration) * 1000)
-    segment = audio[start_ms:end_ms]
-
-    log.debug("Exporting segment")
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
-        temp_path = temp_file.name
-        segment.export(temp_path, format="wav")
-
-    try:
-        log.debug("Load model")
-        model = whisper.load_model("base")
-        log.debug("Transcribing segment")
-        result = model.transcribe(temp_path)
-        log.debug("Transcription complete")
-        return result["text"].strip()
-    finally:
-        Path(temp_path).unlink(missing_ok=True)
+    model_dir = Path("data") / "models"
+    model_dir.mkdir(parents=True, exist_ok=True)
+    log.debug(f"Load model from {model_dir}")
+    model = Model("base", models_dir=str(model_dir))
+    log.debug("Transcribing segment")
+    result = model.transcribe(
+        str(audio_path),
+        offset_ms=int(start * 1000),
+        duration_ms=int(duration * 1000),
+    )
+    log.debug("Transcription complete")
+    return " ".join(seg.text for seg in result)
 
 
 def main() -> None:
