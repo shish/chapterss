@@ -164,14 +164,13 @@ def podcast_config(podcast_id: str) -> Dict[str, Any]:
     return config
 
 
-@app.get("/rss/{podcast_id}")
-def rss(podcast_id: str, request: Request) -> FileResponse:
-    """Serve RSS feed with modified enclosure URLs."""
-    podcast_id = validate_podcast_id(podcast_id)
-    config: Dict[str, Any] = podcast_config(podcast_id)
-
+def fetch_feed(podcast_id: str, config: Dict[str, Any]) -> Path:
+    """
+    Fetch and cache the original RSS feed.
+    Returns the path to the cached feed file.
+    Refreshes the feed if it doesn't exist or is older than 1 hour.
+    """
     data_dir: Path = Path("data").resolve()
-
     original: Path = data_dir / podcast_id / "original" / "feed.xml"
     original.parent.mkdir(parents=True, exist_ok=True)
 
@@ -187,6 +186,20 @@ def rss(podcast_id: str, request: Request) -> FileResponse:
     if should_refresh_original:
         content: bytes = safe_http_get(config["source_rss"], MAX_FEED_SIZE)
         original.write_bytes(content)
+
+    return original
+
+
+@app.get("/rss/{podcast_id}")
+def rss(podcast_id: str, request: Request) -> FileResponse:
+    """Serve RSS feed with modified enclosure URLs."""
+    podcast_id = validate_podcast_id(podcast_id)
+    config: Dict[str, Any] = podcast_config(podcast_id)
+
+    data_dir: Path = Path("data").resolve()
+
+    # Fetch or use cached feed
+    original: Path = fetch_feed(podcast_id, config)
 
     chapped: Path = data_dir / podcast_id / "chapped" / "feed.xml"
     chapped.parent.mkdir(parents=True, exist_ok=True)
@@ -265,12 +278,14 @@ def audio(podcast_id: str, episode_id: str) -> FileResponse:
     original.parent.mkdir(parents=True, exist_ok=True)
 
     if not original.exists():
+        # Fetch or use cached feed
+        cached_feed: Path = fetch_feed(podcast_id, config)
         try:
-            feed_content: bytes = safe_http_get(config["source_rss"], MAX_FEED_SIZE)
+            feed_content: bytes = cached_feed.read_bytes()
             feed: feedparser.FeedParserDict = feedparser.parse(feed_content)
         except Exception as e:
-            log.error(f"Failed to fetch RSS feed: {e}")
-            raise HTTPException(status_code=502, detail="Failed to fetch source RSS feed")
+            log.error(f"Failed to read cached RSS feed: {e}")
+            raise HTTPException(status_code=500, detail="Failed to read cached RSS feed")
 
         for entry in feed.entries:
             # Try to match both the original ID and sanitized ID
@@ -295,7 +310,13 @@ def audio(podcast_id: str, episode_id: str) -> FileResponse:
 
     if not chapped.exists():
         markers_dir: Path = config_dir / podcast_id / "markers"
-        process_episode(original, markers_dir, chapped)
+        process_episode(
+            original,
+            markers_dir,
+            chapped,
+            transcribe=True,
+            summarise=True,
+        )
 
     return FileResponse(chapped)
 

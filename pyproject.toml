@@ -14,12 +14,15 @@ dependencies = [
   "pyyaml",
   "pydub",
   "openai-whisper",
+  "anthropic",
+  "python-dotenv",
 ]
 
 [project.scripts]
 extract-clips = "chapterss.extract_clips:main"
 detect-markers = "chapterss.detect_markers:main"
 transcribe = "chapterss.transcribe:main"
+summarise = "chapterss.summarise:main"
 insert-chapters = "chapterss.insert_chapters:main"
 server = "chapterss.server:main"
 

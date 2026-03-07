@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from .detect_markers import Chapter, detect_marked_chapters
+from .summarise import summarise as summarise_func
 from .transcribe import transcribe as transcribe_func
 
 log: logging.Logger = logging.getLogger(__name__)
@@ -61,6 +62,7 @@ def process_episode(
     threshold: float = 0.85,
     min_gap: float = 8.0,
     transcribe: bool = False,
+    summarise: bool = False,
 ) -> Optional[Path]:
     """
     Process a podcast episode: detect markers and embed chapters.
@@ -117,6 +119,14 @@ def process_episode(
             dur = min(chapter.end - chapter.start, 30.0)
             chapter.title = transcribe_func(audio_path, chapter.start, dur)
 
+    if summarise:
+        for chapter in chapters:
+            try:
+                chapter.title = summarise_func(chapter.title, max_words=5)
+            except Exception as e:
+                log.warning(f"Failed to summarise chapter '{chapter.title}': {e}")
+                # Keep original title if summarisation fails
+
     log.info(f"Found {len(chapters)} chapters:")
     for chapter in chapters:
         start_mins: int = int(chapter.start // 60)
@@ -153,6 +163,7 @@ def main() -> None:
     parser.add_argument("--min-gap", type=float, default=8.0, help="Minimum gap between chapters in seconds")
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose output")
     parser.add_argument("--transcribe", action="store_true", help="Transcribe chapter titles using speech recognition")
+    parser.add_argument("--summarise", action="store_true", help="Summarise chapter titles using OpenAI API")
     args: argparse.Namespace = parser.parse_args()
 
     log_level = logging.DEBUG if args.verbose else logging.INFO
@@ -166,6 +177,8 @@ def main() -> None:
             args.output,
             threshold=args.threshold,
             min_gap=args.min_gap,
+            transcribe=args.transcribe,
+            summarise=args.summarise,
         )
     except Exception as e:
         log.error(f"Error: {e}")
