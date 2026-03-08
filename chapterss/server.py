@@ -1,6 +1,8 @@
 import argparse
 import logging
+import os
 import re
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Dict, List
@@ -89,22 +91,38 @@ def validate_url(url: str) -> str:
     return url
 
 
-def safe_http_get(url: str, max_size: int, timeout: int = REQUEST_TIMEOUT) -> bytes:
-    """Safely fetch URL with validation, size limits, and timeout."""
+def safe_http_get(url: str, max_size: int, target_path: Path, timeout: int = REQUEST_TIMEOUT) -> None:
     validate_url(url)
 
     try:
         response = requests.get(url, timeout=timeout, stream=True, headers={"User-Agent": "ChapteRSS/0.2.0"})
         response.raise_for_status()
 
-        # Read with size limit
-        content = b""
-        for chunk in response.iter_content(chunk_size=8192):
-            content += chunk
-            if len(content) > max_size:
-                raise ValueError(f"Response too large (max {max_size} bytes)")
+        # Stream to temporary file, then rename
+        target_path.parent.mkdir(parents=True, exist_ok=True)
 
-        return content
+        # Create temp file in same directory as target for atomic rename
+        fd, temp_path = tempfile.mkstemp(dir=target_path.parent, suffix=".tmp")
+        try:
+            total_size = 0
+            with os.fdopen(fd, "wb") as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        total_size += len(chunk)
+                        if total_size > max_size:
+                            raise ValueError(f"Response too large (max {max_size} bytes)")
+                        f.write(chunk)
+
+            # Atomic rename
+            os.rename(temp_path, target_path)
+        except Exception:
+            # Clean up temp file on error
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass
+            raise
+
     except requests.RequestException as e:
         log.error(f"HTTP request failed for {url}: {e}")
         raise HTTPException(status_code=502, detail=f"Failed to fetch resource: {str(e)}")
@@ -184,8 +202,7 @@ def fetch_feed(podcast_id: str, config: Dict[str, Any]) -> Path:
             should_refresh_original = True
 
     if should_refresh_original:
-        content: bytes = safe_http_get(config["source_rss"], MAX_FEED_SIZE)
-        original.write_bytes(content)
+        safe_http_get(config["source_rss"], MAX_FEED_SIZE, original)
 
     return original
 
@@ -296,8 +313,7 @@ def audio(podcast_id: str, episode_id: str) -> FileResponse:
                 if entry.get("enclosures"):
                     url: str = entry.enclosures[0].href
                     try:
-                        content: bytes = safe_http_get(url, MAX_AUDIO_SIZE)
-                        original.write_bytes(content)
+                        safe_http_get(url, MAX_AUDIO_SIZE, target_path=original)
                         break
                     except Exception as e:
                         log.error(f"Failed to fetch audio: {e}")
