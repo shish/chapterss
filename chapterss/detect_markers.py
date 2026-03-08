@@ -28,12 +28,7 @@ class Chapter:
 
 
 def load_audio_features(path: Path, sr: int = 22050, hop_length: int = 512) -> tuple[NDArray[np.floating], float]:
-    """Load audio and extract MFCC features for better matching."""
-
     duration = librosa.get_duration(path=path)
-    if duration > 2 * 60 * 60:
-        raise ValueError("Audio too long")
-
     audio, _ = librosa.load(path, sr=sr)
     mfcc = librosa.feature.mfcc(y=audio, sr=sr, n_mfcc=20, hop_length=hop_length)
     mfcc_delta = librosa.feature.delta(mfcc)
@@ -49,28 +44,6 @@ def detect_markers(
     threshold: float = 0.75,
     min_gap: float = 8.0,
 ) -> List[Marker]:
-    """
-    Detect multiple types of markers in an audio file using MFCC features.
-
-    Args:
-        audio_path: Path to the audio file to analyze
-        marker_paths: Dict mapping marker names to their audio file paths
-        threshold: Correlation threshold for detection (0.0-1.0)
-        min_gap: Minimum gap between detections in seconds
-
-    Returns:
-        List of Marker objects sorted by time
-    """
-    # Validate parameters
-    if not 0.0 <= threshold <= 1.0:
-        raise ValueError(f"Threshold must be between 0.0 and 1.0, got {threshold}")
-    if min_gap < 0:
-        raise ValueError(f"min_gap must be non-negative, got {min_gap}")
-    if not marker_paths:
-        raise ValueError("No marker paths provided")
-    if len(marker_paths) > 100:
-        raise ValueError(f"Too many markers (max 100), got {len(marker_paths)}")
-
     log.debug(f"Detecting {len(marker_paths)} markers in {audio_path}...")
 
     hop: int = 512
@@ -133,27 +106,7 @@ def detect_marked_chapters(
     min_gap: float = 8.0,
     intro_threshold: float = 2.0,
 ) -> List[Chapter]:
-    """
-    Detect markers and convert them to chapters.
-
-    Each chapter starts at the end of a marker and continues until the next marker.
-    If there's more than intro_threshold seconds before the first marker, an "Intro"
-    chapter is added.
-
-    Args:
-        audio_path: Path to the audio file to analyze
-        marker_paths: Dict mapping marker names to their audio file paths
-        threshold: Correlation threshold for detection (0.0-1.0)
-        min_gap: Minimum gap between detections in seconds
-        intro_threshold: Minimum time before first marker to create an "Intro" chapter
-
-    Returns:
-        List of Chapter objects sorted by start time
-    """
-    # Get audio duration
     audio_duration = librosa.get_duration(path=audio_path)
-
-    # Detect markers
     markers = detect_markers(audio_path, marker_paths, threshold, min_gap)
 
     if not markers:
@@ -167,14 +120,12 @@ def detect_marked_chapters(
 
     # Create chapters between markers
     for i, marker in enumerate(markers):
-        # Chapter starts at the end of this marker
         chapter_start = marker.time + marker.offset
 
         # Chapter ends at the start of the next marker, or at the end of the audio file
         if i + 1 < len(markers):
             chapter_end = markers[i + 1].time
         else:
-            # For the last chapter, use the actual audio duration
             chapter_end = audio_duration
 
         chapters.append(Chapter(start=chapter_start, end=chapter_end, title=marker.name))
@@ -195,31 +146,24 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     logging.getLogger("chapterss").setLevel(log_level)
 
-    try:
-        marker_paths: Dict[str, Path] = {}
+    marker_paths: Dict[str, Path] = {}
 
-        for marker in sorted(args.markers.glob("*")):
-            name: str = marker.stem
-            safe_name: str = "".join(c for c in name if c.isalnum() or c in "_ -")
-            if safe_name:
-                marker_paths[safe_name] = marker
+    for marker in sorted(args.markers.glob("*")):
+        name: str = marker.stem
+        safe_name: str = "".join(c for c in name if c.isalnum() or c in "_ -")
+        if safe_name:
+            marker_paths[safe_name] = marker
 
-        if not marker_paths:
-            parser.error(f"No audio files found in {args.markers}")
+    if not marker_paths:
+        parser.error(f"No audio files found in {args.markers}")
 
-        log.debug(f"Loading audio: {args.audio}")
-        log.debug(f"Markers to detect: {', '.join(marker_paths.keys())}")
+    log.debug(f"Loading audio: {args.audio}")
+    log.debug(f"Markers to detect: {', '.join(marker_paths.keys())}")
 
-        markers: List[Marker] = detect_markers(args.audio, marker_paths, args.threshold, args.min_gap)
+    markers: List[Marker] = detect_markers(args.audio, marker_paths, args.threshold, args.min_gap)
 
-        print(f"Found {len(markers)} markers:")
-        for marker in markers:
-            mins: int = int(marker.time // 60)
-            secs: int = int(marker.time % 60)
-            print(f"  {mins:02d}:{secs:02d} ({marker.time:.2f}s) - {marker.name} - {marker.confidence * 100:.0f}%")
-    except ValueError as e:
-        log.error(f"Validation error: {e}")
-        exit(1)
-    except Exception as e:
-        log.exception(f"Error: {e}")
-        exit(1)
+    print(f"Found {len(markers)} markers:")
+    for marker in markers:
+        mins: int = int(marker.time // 60)
+        secs: int = int(marker.time % 60)
+        print(f"  {mins:02d}:{secs:02d} ({marker.time:.2f}s) - {marker.name} - {marker.confidence * 100:.0f}%")

@@ -6,15 +6,19 @@ from pywhispercpp.model import Model
 
 log: logging.Logger = logging.getLogger(__name__)
 
+model = None
+
 
 def transcribe(audio_path: Path, start: float, duration: float) -> str:
-    log.info(f"Transcribing {audio_path} from {start:.2f}s to {start + duration:.2f}s")
+    global model
 
-    model_dir = Path("data") / "models"
-    model_dir.mkdir(parents=True, exist_ok=True)
-    log.debug(f"Load model from {model_dir}")
-    model = Model("base", models_dir=str(model_dir))
-    log.debug("Transcribing segment")
+    if model is None:
+        model_dir = Path("data") / "models"
+        model_dir.mkdir(parents=True, exist_ok=True)
+        log.debug(f"Load STT model from {model_dir}")
+        model = Model("base", models_dir=str(model_dir))
+
+    log.info(f"Transcribing {audio_path} from {start:.2f}s to {start + duration:.2f}s")
     result = model.transcribe(
         str(audio_path),
         offset_ms=int(start * 1000),

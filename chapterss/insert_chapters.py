@@ -74,12 +74,6 @@ def process_episode(
         threshold: Detection threshold (0.0-1.0)
         min_gap: Minimum gap between detections in seconds
     """
-    # Validate threshold and min_gap
-    if not 0.0 <= threshold <= 1.0:
-        raise ValueError(f"Threshold must be between 0.0 and 1.0, got {threshold}")
-    if min_gap < 0:
-        raise ValueError(f"min_gap must be non-negative, got {min_gap}")
-
     log.debug(f"Processing: {audio_path}")
     log.debug(f"Markers folder: {markers_folder}")
     log.debug(f"Output: {output_path}")
@@ -92,14 +86,6 @@ def process_episode(
     allowed_extensions: set[str] = {".wav", ".mp3", ".flac", ".ogg", ".m4a"}
 
     for audio_file in sorted(markers_folder.glob("*")):
-        # Ensure we only process files within the markers folder (no symlinks to outside)
-        try:
-            audio_file_resolved: Path = audio_file.resolve()
-            audio_file_resolved.relative_to(markers_folder.resolve())
-        except ValueError, RuntimeError:
-            log.warning(f"Skipping file outside markers folder: {audio_file}")
-            continue
-
         if audio_file.suffix.lower() in allowed_extensions:
             name: str = audio_file.stem
             # Sanitize marker name to prevent injection in chapter titles
@@ -121,11 +107,7 @@ def process_episode(
 
     if summarise:
         for chapter in chapters:
-            try:
-                chapter.title = summarise_func(chapter.title, max_words=5)
-            except Exception as e:
-                log.warning(f"Failed to summarise chapter '{chapter.title}': {e}")
-                # Keep original title if summarisation fails
+            chapter.title = summarise_func(chapter.title, max_words=5)
 
     log.info(f"Found {len(chapters)} chapters:")
     for chapter in chapters:
@@ -170,16 +152,12 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     logging.getLogger("chapterss").setLevel(log_level)
 
-    try:
-        process_episode(
-            args.audio,
-            args.markers,
-            args.output,
-            threshold=args.threshold,
-            min_gap=args.min_gap,
-            transcribe=args.transcribe,
-            summarise=args.summarise,
-        )
-    except Exception as e:
-        log.error(f"Error: {e}")
-        exit(1)
+    process_episode(
+        args.audio,
+        args.markers,
+        args.output,
+        threshold=args.threshold,
+        min_gap=args.min_gap,
+        transcribe=args.transcribe,
+        summarise=args.summarise,
+    )

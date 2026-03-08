@@ -15,7 +15,7 @@ dependencies = [
   "pydub",
   "pywhispercpp",
   "anthropic",
-  "python-dotenv",
+  "srt",
 ]
 
 [project.scripts]
