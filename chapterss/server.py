@@ -137,10 +137,7 @@ def list_podcasts() -> Dict[str, List[str]]:
 
     podcasts: List[str] = []
     for config_file in config_dir.glob("*/config.yaml"):
-        podcast_id: str = config_file.parent.name
-        # Validate the podcast_id
-        if re.match(r"^[a-zA-Z0-9_-]+$", podcast_id):
-            podcasts.append(podcast_id)
+        podcasts.append(config_file.parent.name)
 
     return {"podcasts": podcasts}
 
@@ -150,13 +147,6 @@ def podcast_config(podcast_id: str) -> Dict[str, Any]:
     podcast_id = validate_podcast_id(podcast_id)
 
     config_path: Path = Path("config").resolve() / podcast_id / "config.yaml"
-
-    # Ensure the path is within the config directory
-    try:
-        config_path = config_path.resolve()
-        config_path.relative_to(Path("config").resolve())
-    except ValueError, RuntimeError:
-        raise HTTPException(status_code=400, detail="Invalid podcast configuration path")
 
     if not config_path.exists():
         raise HTTPException(status_code=404, detail="Podcast configuration not found")

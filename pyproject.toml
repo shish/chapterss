@@ -30,6 +30,8 @@ server = "chapterss.server:main"
 dev = [
     "mypy",
     "ruff",
+    "pytest",
+    "pytest-mock",
     "scipy-stubs>=1.17.1.0",
     "types-PyYAML",
     "types-requests",
