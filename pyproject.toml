@@ -32,7 +32,7 @@ dev = [
     "ruff",
     "pytest",
     "pytest-mock",
-    "scipy-stubs>=1.17.1.4",
+    "scipy-stubs>=1.17.1.5",
     "types-PyYAML",
     "types-requests",
 ]
