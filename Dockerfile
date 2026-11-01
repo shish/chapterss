@@ -1,4 +1,4 @@
-FROM python:3.14-slim
+FROM python:3.15-slim
 
 # ffmpeg for audio processing
 RUN apt-get update && \
@@ -22,4 +22,4 @@ RUN uv sync --frozen --no-dev
 EXPOSE 8000
 
 # Default command - use uv to run the application
-CMD ["uv", "run", "--frozen", "--no-dev", "server", "--host", "0.0.0.0", "--port", "8000", "--verbose"]
+CMD ["uv", "run", "--no-sync", "--frozen", "--no-dev", "server", "--host", "0.0.0.0", "--port", "8000", "--verbose"]
